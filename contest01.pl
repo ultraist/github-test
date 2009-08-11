@@ -16,14 +16,13 @@ sub read_repo
   while (my $line = <R>) {
     chomp($line);
     my ($repo_id, undef) = split(":", $line);
-    $repo{$repo_id} = $i;
-    $conv[$i] = $repo_id;
+    $repo{$repo_id} = 0;
     ++$i;
   }
   close(R);
   printf("read repo %d\n", $i);
   
-  return { id => \%repo, conv => \@conv, n => $i };
+  return { id => \%repo, n => $i };
 }
 
 sub read_user
@@ -41,15 +40,9 @@ sub read_user
     my ($user_id, $repo_id) = split(":", $line);
     if (!exists($user{$user_id})) {
       $user{$user_id} = {};
-      my $repo_i = $repo->{id}->{$repo_id};
-      if (defined($repo_i)) {
-        $user{$user_id}->{$repo_i} = 1;
-      }
+      $user{$user_id}->{$repo_id} = 1;
     } else {
-      my $repo_i = $repo->{id}->{$repo_id};
-      if (defined($repo_i)) {
-        $user{$user_id}->{$repo_i} = 1;
-      }
+      $user{$user_id}->{$repo_id} = 1;
     }
   }
   close(U);
@@ -98,6 +91,26 @@ sub read_test
   return \@uid;
 }
 
+sub repo_rank
+{
+    my ($repo, $user) = @_;
+    my $n  = 0;
+
+    
+    foreach my $uid (keys(%{$user->{all_id}})) {
+	my $repo_vec = $user->{all_id}->{$uid};
+
+	foreach my $i (keys(%$repo_vec)) {
+	    $repo->{id}->{$i} += 1.0;
+	    ++$n;
+	}
+    }
+    my $factor = 1.0 / $n;
+    foreach my $i (keys(%{$repo->{id}})) {
+	$repo->{id}->{$i} *= $factor;
+    }
+}
+
 sub jaccard
 {
   my ($v1, $v2) = @_;
@@ -125,7 +138,7 @@ sub print_vec
   my ($vec, $repo) = @_;
 
   foreach my $k (keys(%$vec)) {
-    print "\t$repo->{conv}->[$k]";
+    print "\t$k";
   }
   print ";;\n";
 }
@@ -155,11 +168,11 @@ sub recommend_repo
     #  print_vec($repo_vec, $repo);
     #}
     foreach $i (keys(%$repo_vec)) {
-      if (defined($score_vec{$i})) {
-        $score_vec{$i}->{score} += $weight;
-      } else {
+      if (!defined($score_vec{$i})) {
         $score_vec{$i} = { i => $i, score => 0.0 };
-        $score_vec{$i}->{score} = $weight;
+        $score_vec{$i}->{score} = $weight * $repo->{id}->{$i};
+      } else {
+        $score_vec{$i}->{score} += $weight * $repo->{id}->{$i};
       }
     }
   }
@@ -167,17 +180,11 @@ sub recommend_repo
   $i = $c = 0;
   while ($c < 10) {
     if (!defined($vec->{$rec_vec[$i]->{i}})) {
-      #printf("%s:%f\n", $repo->{conv}->[$rec_vec[$i]->{i}], $rec_vec[$i]->{count});
-      push(@result, $repo->{conv}->[$rec_vec[$i]->{i}]);
+      #printf("%s:%f\n", $rec_vec[$i]->{i}, $rec_vec[$i]->{score});
+      push(@result, $rec_vec[$i]->{i});
       ++$c;
     }
-    if (++$i >= scalar(@rec_vec)) {
-      while ($c < 10) {
-        print "oh..shit!\n";
-        push(@result, $repo->{conv}->[int(rand($repo->{n}-1))]);
-        ++$c;
-      }
-    }
+    ++$i;
   }
   return @result;
 }
@@ -188,6 +195,8 @@ super_testttt:
   my $user = read_user($repo);
   my $test = read_test();
   my $count = 0;
+
+  repo_rank($repo, $user);
   
   open(O, ">results.txt") or die $!;
   select(O);$|=1;select(STDOUT);
