@@ -71,7 +71,7 @@ sub read_user
   $sd = sqrt($var);
   foreach my $k (keys(%user)) {
     my $p = scalar(keys(%{$user{$k}}));
-    if ($avg < $p && $p < $avg + $sd) {
+    if ($avg / 2 < $p && $p < $avg + $sd) {
       $sample_user{$k} = $user{$k};
     }
   }
@@ -149,7 +149,7 @@ sub recommend_repo
   
   for ($j = 0; $j < $n; ++$j) {
     my $repo_vec = $user->{id}->{$dist[$j]->{uid}};
-    my $weight = (1.0 - ($j / $n));
+    my $weight = 1.0;
     #if ($j < 5) {
     #  print "$j:";
     #  print_vec($repo_vec, $repo);
