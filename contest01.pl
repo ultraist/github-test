@@ -154,14 +154,16 @@ sub print_vec
 
 sub _get_fork_base
 {
-    my ($repo, $id, $fork_base) = @_;
+    my ($repo, $id, $fork_base, $n) = @_;
+
+    if ($n >= 2) {
+	return;
+    }
 
     if ($repo->{id}->{$id}->{base}) {
 	my $base_id = $repo->{id}->{$id}->{base};
-	if (!$repo->{id}->{$base_id}->{base}) {
-	    push(@$fork_base, { id => $base_id, rate => $repo->{id}->{$base_id}->{rate}});
-	}
-	_get_fork_base($repo, $base_id, $fork_base);
+	push(@$fork_base, { id => $base_id, rate => $repo->{id}->{$base_id}->{rate}});
+	_get_fork_base($repo, $base_id, $fork_base, $n + 1);
     }
 }
 
@@ -172,7 +174,7 @@ sub get_fork_base
     my $fork_base = [];
     
     foreach my $id (keys(%$vec)) {
-	_get_fork_base($repo, $id, $fork_base_tmp);
+	_get_fork_base($repo, $id, $fork_base_tmp, 0);
     }
     foreach my $id (@$fork_base_tmp) {
 	if (!defined($vec->{$id->{id}})) {
