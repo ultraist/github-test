@@ -158,7 +158,9 @@ sub _get_fork_base
 
     if ($repo->{id}->{$id}->{base}) {
 	my $base_id = $repo->{id}->{$id}->{base};
-	push(@$fork_base, { id => $base_id, rate => $repo->{id}->{$base_id}->{rate}});
+	if (!$repo->{id}->{$base_id}->{base}) {
+	    push(@$fork_base, { id => $base_id, rate => $repo->{id}->{$base_id}->{rate}});
+	}
 	_get_fork_base($repo, $base_id, $fork_base);
     }
 }
