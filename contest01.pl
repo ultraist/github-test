@@ -219,9 +219,15 @@ sub get_fork_base
 sub _get_author_repo
 {
     my ($repo, $id, $author_repo) = @_;
-
+    my $n = 0;
+    
     foreach my $id (@{$repo->{author}->{$repo->{id}->{$id}->{author}}}) {
 	push(@$author_repo, { rate => $repo->{id}->{$id}->{rate}, id => $id });
+
+	++$n;
+	if ($n >= 2 ) {
+	    last;
+	}
     }
 }
 
@@ -231,7 +237,6 @@ sub get_author_repo
     my $author_repo_tmp = [];
     my $author_repo = [];
 
-    
     foreach my $id (keys(%$vec)) {
 	_get_author_repo($repo, $id, $author_repo_tmp);
     }
