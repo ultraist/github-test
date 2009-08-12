@@ -72,6 +72,7 @@ sub read_user
   printf("read user , count: %d, var:%f, sd:%f, samples:%d\n", $count, $var, $sd, $samples);
   
   return { id => $sample_user, all_id => $user, n => $samples};
+#  return { id => $user, all_id => $user, n => $count};
 }
 
 sub read_test
@@ -169,7 +170,7 @@ sub recommend_repo
   $matchs = 0;
   for ($j = 0; $j < $n; ++$j) {
     my $repo_vec = $user->{id}->{$dist[$j]->{uid}};
-    my $base = 0.5;
+    my $weight = 1.0 - $j / $n;
     if ($dist[$j]->{dist} != 0.0) {
 	#if ($j < 5) {
 	#  print "$j($dist[$j]->{dist}):";
@@ -178,9 +179,9 @@ sub recommend_repo
 	foreach $i (keys(%$repo_vec)) {
 	    if (!defined($score_vec{$i})) {
 		$score_vec{$i} = { i => $i, score => 0.0 };
-		$score_vec{$i}->{score} = 1.0 + $nfac * $repo->{id}->{$i};
+		$score_vec{$i}->{score} = $weight + $nfac * $repo->{id}->{$i};
 	    } else {
-		$score_vec{$i}->{score} += 1.0 + $nfac * $repo->{id}->{$i};
+		$score_vec{$i}->{score} += $weight + $nfac * $repo->{id}->{$i};
 	    }
 	}
 	++$matchs;
