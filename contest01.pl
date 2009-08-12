@@ -349,6 +349,20 @@ sub recommend_repo
       }
   }
 
+
+  if ($c < 10) {
+      my @author_repo = get_author_repo($repo, $vec);
+#      printf("author_repo: %d, %s\n", scalar(@author_repo), join(",", @author_repo));
+      
+      foreach $i (@author_repo) {
+	  push(@result, $i);
+	  
+	  if (++$c >= 10) {
+	      last;
+	  }
+      }
+  }
+  
   if ($c < 10) {
       my @fork = get_fork($repo, $vec);
       #if (@fork) {
@@ -358,19 +372,6 @@ sub recommend_repo
       #}
       
       foreach $i (@fork) {
-	  push(@result, $i);
-	  
-	  if (++$c >= 10) {
-	      last;
-	  }
-      }
-  }
-
-  if ($c < 10) {
-      my @author_repo = get_author_repo($repo, $vec);
-#      printf("author_repo: %d, %s\n", scalar(@author_repo), join(",", @author_repo));
-      
-      foreach $i (@author_repo) {
 	  push(@result, $i);
 	  
 	  if (++$c >= 10) {
