@@ -16,7 +16,7 @@ sub read_repo
   while (my $line = <R>) {
     chomp($line);
     my ($repo_id, undef) = split(":", $line);
-    $repo{$repo_id} = 0;
+    $repo{$repo_id} = 0.0;
     ++$i;
   }
   close(R);
@@ -74,7 +74,6 @@ sub read_user
   return { id => \%sample_user, all_id => \%user, n => $samples};
 }
 
-
 sub read_test
 {
   my @uid;
@@ -94,18 +93,20 @@ sub read_test
 sub repo_rank
 {
     my ($repo, $user) = @_;
-    my $n  = 0;
+    my $max_count  = 0;
 
-    
     foreach my $uid (keys(%{$user->{all_id}})) {
 	my $repo_vec = $user->{all_id}->{$uid};
-
 	foreach my $i (keys(%$repo_vec)) {
 	    $repo->{id}->{$i} += 1.0;
-	    ++$n;
 	}
     }
-    my $factor = 1.0 / $n;
+    foreach my $i (keys(%{$repo->{id}})) {
+	if ($max_count < $repo->{id}->{$i}) {
+	    $max_count = $repo->{id}->{$i};
+	}
+    }
+    my $factor = 1.0 / $max_count;
     foreach my $i (keys(%{$repo->{id}})) {
 	$repo->{id}->{$i} *= $factor;
     }
@@ -162,7 +163,7 @@ sub recommend_repo
   
   for ($j = 0; $j < $n; ++$j) {
     my $repo_vec = $user->{id}->{$dist[$j]->{uid}};
-    my $weight = 1.0;
+    my $base = 0.5;
     #if ($j < 5) {
     #  print "$j:";
     #  print_vec($repo_vec, $repo);
@@ -170,9 +171,9 @@ sub recommend_repo
     foreach $i (keys(%$repo_vec)) {
       if (!defined($score_vec{$i})) {
         $score_vec{$i} = { i => $i, score => 0.0 };
-        $score_vec{$i}->{score} = $weight * $repo->{id}->{$i};
+        $score_vec{$i}->{score} = $base + $repo->{id}->{$i};
       } else {
-        $score_vec{$i}->{score} += $weight * $repo->{id}->{$i};
+        $score_vec{$i}->{score} += $base + $repo->{id}->{$i};
       }
     }
   }
