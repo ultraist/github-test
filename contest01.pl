@@ -178,6 +178,46 @@ sub print_vec
   print ";;\n";
 }
 
+sub _get_fork
+{
+    my ($repo, $id, $fork) = @_;
+    my $n = 0;
+    
+    if (defined($repo->{id}->{$id}->{fork})) {
+	foreach my $i (@{$repo->{id}->{$id}->{fork}}) {
+	    push(@$fork, { id => $i, rate => $repo->{id}->{$i}->{rate}});
+
+	    if (++$n >= 2) {
+		last;
+	    }
+	}
+    }
+}
+
+sub get_fork
+{
+    my ($repo, $vec) = @_;
+    my $fork = [];
+    my $fork_tmp = [];
+
+    foreach my $id (keys(%$vec)) {
+	_get_fork($repo, $id, $fork_tmp);
+    }
+    foreach my $id (@$fork_tmp) {
+	if (!defined($vec->{$id->{id}})) {
+	    push(@$fork, $id);
+	}
+    }
+    @$fork_tmp = sort { $b->{rate} <=> $a->{rate} } @$fork;
+    @$fork = ();
+    foreach my $id (@$fork_tmp) {
+	push(@$fork, $id->{id});
+    }
+
+    return uniq(@$fork);
+}
+
+
 sub _get_fork_base
 {
     my ($repo, $id, $fork_base, $n) = @_;
@@ -224,8 +264,7 @@ sub _get_author_repo
     foreach my $id (@{$repo->{author}->{$repo->{id}->{$id}->{author}}}) {
 	push(@$author_repo, { rate => $repo->{id}->{$id}->{rate}, id => $id });
 
-	++$n;
-	if ($n >= 2 ) {
+	if (++$n >= 2 ) {
 	    last;
 	}
     }
@@ -307,6 +346,23 @@ sub recommend_repo
       
       if (++$c >= 10) {
 	  last;
+      }
+  }
+
+  if ($c < 10) {
+      my @fork = get_fork($repo, $vec);
+      #if (@fork) {
+      #    printf("fork : %d, %s\n", scalar(@fork), join(",", @fork));
+      #} else {
+      #    printf("fork : 0\n");
+      #}
+      
+      foreach $i (@fork) {
+	  push(@result, $i);
+	  
+	  if (++$c >= 10) {
+	      last;
+	  }
       }
   }
 
