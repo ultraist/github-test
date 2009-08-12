@@ -7,6 +7,7 @@ $| = 1;
 sub read_repo
 {
   my $repo = {};
+  my $author = {};
   my @conv;
   my $i = 0;
 
@@ -18,14 +19,36 @@ sub read_repo
     chomp($line);
     my ($repo_id, $footer) = split(":", $line);
     my ($name, $date, $base) = split(",", $footer);
+    my ($author_name, $repo_name) = split("/", $name);
+
+    $repo->{$repo_id} = { rate => 0.0, base => $base, author => $author_name };
+
+    if (!defined($author->{$author_name})) {
+	$author->{$author_name} = [];
+	push(@{$author->{$author_name}}, $repo_id);
+    } else {
+	push(@{$author->{$author_name}}, $repo_id);
+    }
     
-    $repo->{$repo_id} = { rate => 0.0, base => $base };
     ++$i;
   }
   close(R);
+
+  foreach my $id (keys(%$repo)) {
+      my $base_id = $repo->{$id}->{base};
+      if ($base_id) {
+	  if (!defined($repo->{$id}->{fork})) {
+	      $repo->{$id}->{fork} = [];
+	      push(@{$repo->{$id}->{fork}}, $base_id);
+	  } else {
+	      push(@{$repo->{$id}->{fork}}, $base_id);
+	  }
+      }
+  }
+  
   printf("read repo %d\n", $i);
   
-  return { id => $repo, n => $i };
+  return { id => $repo, author => $author, n => $i };
 }
 
 sub read_user
@@ -126,8 +149,9 @@ sub repo_rank
 sub sim
 {
   my ($v1, $v2) = @_;
-  my $n = 0;
+  my ($n1, $n2) = (scalar(keys(%$v1)), scalar(keys(%$v2)));
   my $ok11 = 0;
+  my $n = 0;
   
   foreach my $k (keys(%$v1)) {
     if (defined($v2->{$k})) {
@@ -135,9 +159,11 @@ sub sim
     }
     ++$n;
   }
+
   if ($n == 0) {
       return 0;
   }
+
   
   return $ok11 / $n;
 }
@@ -188,6 +214,40 @@ sub get_fork_base
     }
 
     return uniq(@$fork_base);
+}
+
+sub _get_author_repo
+{
+    my ($repo, $id, $author_repo) = @_;
+
+    foreach my $id (@{$repo->{author}->{$repo->{id}->{$id}->{author}}}) {
+	push(@$author_repo, { rate => $repo->{id}->{$id}->{rate}, id => $id });
+    }
+}
+
+sub get_author_repo
+{
+    my ($repo, $vec) = @_;
+    my $author_repo_tmp = [];
+    my $author_repo = [];
+
+    
+    foreach my $id (keys(%$vec)) {
+	_get_author_repo($repo, $id, $author_repo_tmp);
+    }
+    
+    foreach my $id (@$author_repo_tmp) {
+	if (!defined($vec->{$id->{id}})) {
+	    push(@$author_repo, $id);
+	}
+    }
+    @$author_repo_tmp = sort { $b->{rate} <=> $a->{rate} } @$author_repo;
+    @$author_repo = ();
+    foreach my $id (@$author_repo_tmp) {
+	push(@$author_repo, $id->{id});
+    }
+
+    return uniq(@$author_repo);
 }
 
 sub recommend_repo
@@ -242,6 +302,19 @@ sub recommend_repo
       
       if (++$c >= 10) {
 	  last;
+      }
+  }
+
+  if ($c < 10) {
+      my @author_repo = get_author_repo($repo, $vec);
+#      printf("author_repo: %d, %s\n", scalar(@author_repo), join(",", @author_repo));
+      
+      foreach $i (@author_repo) {
+	  push(@result, $i);
+	  
+	  if (++$c >= 10) {
+	      last;
+	  }
       }
   }
 
