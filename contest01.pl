@@ -222,10 +222,6 @@ sub _get_fork_base
 {
     my ($repo, $id, $fork_base, $n) = @_;
 
-    if ($n >= 2) {
-	return;
-    }
-
     if ($repo->{id}->{$id}->{base}) {
 	my $base_id = $repo->{id}->{$id}->{base};
 	push(@$fork_base, { id => $base_id, rate => $repo->{id}->{$base_id}->{rate}});
@@ -363,23 +359,6 @@ sub recommend_repo
       }
   }
   
-  if ($c < 10) {
-      my @fork = get_fork($repo, $vec);
-      #if (@fork) {
-      #    printf("fork : %d, %s\n", scalar(@fork), join(",", @fork));
-      #} else {
-      #    printf("fork : 0\n");
-      #}
-      
-      foreach $i (@fork) {
-	  push(@result, $i);
-	  
-	  if (++$c >= 10) {
-	      last;
-	  }
-      }
-  }
-
   if ($c < 10) {
       if ($matchs == 0) {
 	  for ($j = 0; $j < scalar(@{$repo->{rank}}); ++$j) {
