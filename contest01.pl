@@ -1,6 +1,7 @@
 # testtest
 use strict;
 use warnings;
+use List::MoreUtils qw/uniq/;
 $| = 1;
 
 sub read_repo
@@ -15,8 +16,10 @@ sub read_repo
   
   while (my $line = <R>) {
     chomp($line);
-    my ($repo_id, undef) = split(":", $line);
-    $repo->{$repo_id} = 0.0;
+    my ($repo_id, $footer) = split(":", $line);
+    my ($name, $date, $base) = split(",", $footer);
+    
+    $repo->{$repo_id} = { rate => 0.0, base => $base };
     ++$i;
   }
   close(R);
@@ -71,8 +74,8 @@ sub read_user
   $samples =  scalar(keys(%$sample_user));
   printf("read user , count: %d, var:%f, sd:%f, samples:%d\n", $count, $var, $sd, $samples);
   
-#  return { id => $sample_user, all_id => $user, n => $samples};
-  return { id => $user, all_id => $user, n => $count};
+  return { id => $sample_user, all_id => $user, n => $samples};
+#  return { id => $user, all_id => $user, n => $count};
 }
 
 sub read_test
@@ -99,22 +102,22 @@ sub repo_rank
     foreach my $uid (keys(%{$user->{all_id}})) {
 	my $repo_vec = $user->{all_id}->{$uid};
 	foreach my $i (keys(%$repo_vec)) {
-	    $repo->{id}->{$i} += 1.0;
+	    $repo->{id}->{$i}->{rate} += 1.0;
 	}
     }
     foreach my $i (keys(%{$repo->{id}})) {
-	if ($max_count < $repo->{id}->{$i}) {
-	    $max_count = $repo->{id}->{$i};
+	if ($max_count < $repo->{id}->{$i}->{rate}) {
+	    $max_count = $repo->{id}->{$i}->{rate};
 	}
     }
     my $factor = 1.0 / $max_count;
     foreach my $i (keys(%{$repo->{id}})) {
-	$repo->{id}->{$i} *= $factor;
+	$repo->{id}->{$i}->{rate} *= $factor;
     }
 
     my $rank = [];
     foreach my $i (keys(%{$repo->{id}})) {
-	push(@$rank, { id => $i, score => $repo->{id}->{$i}});
+	push(@$rank, { id => $i, score => $repo->{id}->{$i}->{rate}});
     }
     @$rank = sort { $b->{score} <=> $a->{score} } @$rank;
     $repo->{rank} = $rank;
@@ -149,6 +152,40 @@ sub print_vec
   print ";;\n";
 }
 
+sub _get_fork_base
+{
+    my ($repo, $id, $fork_base) = @_;
+
+    if ($repo->{id}->{$id}->{base}) {
+	my $base_id = $repo->{id}->{$id}->{base};
+	push(@$fork_base, { id => $base_id, rate => $repo->{id}->{$base_id}->{rate}});
+	_get_fork_base($repo, $base_id, $fork_base);
+    }
+}
+
+sub get_fork_base
+{
+    my ($repo, $vec) = @_;
+    my $fork_base_tmp = [];
+    my $fork_base = [];
+    
+    foreach my $id (keys(%$vec)) {
+	_get_fork_base($repo, $id, $fork_base_tmp);
+    }
+    foreach my $id (@$fork_base_tmp) {
+	if (!defined($vec->{$id->{id}})) {
+	    push(@$fork_base, $id);
+	}
+    }
+    @$fork_base_tmp = sort { $b->{rate} <=> $a->{rate} } @$fork_base;
+    @$fork_base = ();
+    foreach my $id (@$fork_base_tmp) {
+	push(@$fork_base, $id->{id});
+    }
+
+    return uniq(@$fork_base);
+}
+
 sub recommend_repo
 {
   my ($user, $repo, $vec, $n) = @_;
@@ -179,44 +216,61 @@ sub recommend_repo
 	foreach $i (keys(%$repo_vec)) {
 	    if (!defined($score_vec{$i})) {
 		$score_vec{$i} = { i => $i, score => 0.0 };
-		$score_vec{$i}->{score} = $weight + $nfac * $repo->{id}->{$i};
+		$score_vec{$i}->{score} = $weight + $nfac * $repo->{id}->{$i}->{rate};
 	    } else {
-		$score_vec{$i}->{score} += $weight + $nfac * $repo->{id}->{$i};
+		$score_vec{$i}->{score} += $weight + $nfac * $repo->{id}->{$i}->{rate};
 	    }
 	}
 	++$matchs;
     }
   }
   
-  if ($matchs == 0) {
-      $c = 0;
-      for ($j = 0; $j < scalar(@{$repo->{rank}}); ++$j) {
-	  if (!defined($vec->{$repo->{rank}->[$j]->{id}})) {
-	      push(@result, $repo->{rank}->[$j]->{id});
-	      ++$c;
-	  }
-	  if ($c >= 10) {
-	      last;
-	  }
+  $c = 0;
+  my @fork_base = get_fork_base($repo, $vec);
+  #if (@fork_base) {
+  #    printf("fork base: %d, %s\n", scalar(@fork_base), join(",", @fork_base));
+  #} else {
+  #    printf("fork base: 0\n");
+  #}
+
+  foreach $i (@fork_base) {
+      push(@result, $i);
+      
+      if (++$c >= 10) {
+	  last;
       }
-  } else {
-      @rec_vec = sort { $b->{score} <=> $a->{score} } values(%score_vec);
-      $i = $c = 0;
-      while ($c < 10) {
-	  if (!defined($vec->{$rec_vec[$i]->{i}})) {
-	      #printf("%s:%f\n", $rec_vec[$i]->{i}, $rec_vec[$i]->{score});
-	      push(@result, $rec_vec[$i]->{i});
-	      ++$c;
+  }
+
+  if ($c < 10) {
+      if ($matchs == 0) {
+	  for ($j = 0; $j < scalar(@{$repo->{rank}}); ++$j) {
+	      if (!defined($vec->{$repo->{rank}->[$j]->{id}})) {
+		  push(@result, $repo->{rank}->[$j]->{id});
+		  ++$c;
+	      }
+	      if ($c >= 10) {
+		  last;
+	      }
 	  }
-	  ++$i;
-	  if (!defined($rec_vec[$i]->{i})) {
-	      for ($j = 0; $j < scalar(@{$repo->{rank}}); ++$j) {
-		  if (!defined($vec->{$repo->{rank}->[$j]->{id}})) {
-		      push(@result, $repo->{rank}->[$j]->{id});
-		      ++$c;
-		  }
-		  if ($c >= 10) {
-		      last;
+      } else {
+	  @rec_vec = sort { $b->{score} <=> $a->{score} } values(%score_vec);
+	  $i = 0;
+	  while ($c < 10) {
+	      if (!defined($vec->{$rec_vec[$i]->{i}})) {
+		  #printf("%s:%f\n", $rec_vec[$i]->{i}, $rec_vec[$i]->{score});
+		  push(@result, $rec_vec[$i]->{i});
+		  ++$c;
+	      }
+	      ++$i;
+	      if (!defined($rec_vec[$i]->{i})) {
+		  for ($j = 0; $j < scalar(@{$repo->{rank}}); ++$j) {
+		      if (!defined($vec->{$repo->{rank}->[$j]->{id}})) {
+			  push(@result, $repo->{rank}->[$j]->{id});
+			  ++$c;
+		      }
+		      if ($c >= 10) {
+			  last;
+		      }
 		  }
 	      }
 	  }
@@ -241,7 +295,7 @@ super_testttt:
     printf("recommend %.02f%%..\r", 100 * $count / scalar(@$test));
     
     my $test_vec = $user->{all_id}->{$uid};
-    my @result = recommend_repo($user, $repo, $test_vec, 200);
+    my @result = recommend_repo($user, $repo, $test_vec, 100);
     print O $uid, ":", join(",", @result), "\n";
     #print $uid, ":", join(",", @result), "\n";
     ++$count;
