@@ -71,8 +71,8 @@ sub read_user
   $samples =  scalar(keys(%$sample_user));
   printf("read user , count: %d, var:%f, sd:%f, samples:%d\n", $count, $var, $sd, $samples);
   
-  return { id => $sample_user, all_id => $user, n => $samples};
-#  return { id => $user, all_id => $user, n => $count};
+#  return { id => $sample_user, all_id => $user, n => $samples};
+  return { id => $user, all_id => $user, n => $count};
 }
 
 sub read_test
@@ -241,7 +241,7 @@ super_testttt:
     printf("recommend %.02f%%..\r", 100 * $count / scalar(@$test));
     
     my $test_vec = $user->{all_id}->{$uid};
-    my @result = recommend_repo($user, $repo, $test_vec, 100);
+    my @result = recommend_repo($user, $repo, $test_vec, 200);
     print O $uid, ":", join(",", @result), "\n";
     #print $uid, ":", join(",", @result), "\n";
     ++$count;
