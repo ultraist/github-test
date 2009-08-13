@@ -2,6 +2,7 @@
 use strict;
 use warnings;
 use List::MoreUtils qw/uniq/;
+
 $| = 1;
 
 sub read_repo
@@ -53,7 +54,7 @@ sub read_repo
 
 sub read_user
 {
-  my ($repo, $lang) = @_;
+  my ($repo, $lang, $topic) = @_;
   my $user = {};
   my $i = 0;
   
@@ -95,7 +96,6 @@ sub read_user
     }
   }
   $samples =  scalar(keys(%$sample_user));
-  printf("read user , count: %d, var:%f, sd:%f, samples:%d\n", $count, $var, $sd, $samples);
 
 
   # lang
@@ -110,9 +110,99 @@ sub read_user
       $user_lang->{$uid} = [];
       push(@{$user_lang->{$uid}}, uniq(@skill_lang));
   }
-  
-  return { id => $sample_user, all_id => $user, lang => $user_lang, n => $samples};
+
+  # topic
+  $i = 0;
+  my $user_topic = {};
+  if (!-f "topic_vec.txt") {
+      open(T, ">topic_vec.txt") or die $!;
+      foreach my $uid (keys(%$sample_user)) {
+	  print "topic vec $i..\r";++$i;
+	  $user_topic->{$uid} = topic_vector($topic, $user->{$uid});
+	  print T sprintf("%s:%s\n", $uid, join(",", @{$user_topic->{$uid}}));
+      }
+      close(T);
+  } else {
+      open(T, "topic_vec.txt") or die $!;
+      while (my $line = <T>) {
+	  chomp($line);
+	  my($uid, $v) = split(":", $line);
+	  my @vec = split(",", $v);
+	  $user_topic->{$uid} = [];
+	  @{$user_topic->{$uid}} = @vec;
+      }
+      close(T);
+  }
+
+  printf("read user , count: %d, var:%f, sd:%f, samples:%d\n", $count, $var, $sd, $samples);
+
+
+  return { id => $sample_user, all_id => $user, topic => $user_topic, lang => $user_lang, n => $samples};
 #  return { id => $user, all_id => $user, n => $count};
+}
+
+sub read_topic
+{
+    my $topic = [];
+    my $n = 0;
+    my %current_words;
+
+    print "read topic\r";
+    
+    open(T, "lda/model-01000.twords") or die $!;
+    my $line = <T>; # first topic
+    
+    while ($line = <T>) {
+	chomp($line);
+	if ($line =~ /^\s/) {
+	    $line =~ s/^\s//g;
+	    $line =~ s/\s+/ /g;
+	    my($word, $likely) = split(/ /, $line);
+	    $current_words{$word} = $likely;
+	} else {
+	    $topic->[$n] = {};
+	    %{$topic->[$n]} = %current_words;
+	    %current_words = ();
+	    ++$n;
+	}
+    }
+    $topic->[$n] = {};
+    %{$topic->[$n]} = %current_words;
+
+    print "read topic $n\n";
+
+    return $topic;
+}
+
+sub topic_vector
+{
+    my ($topic, $user_vec) = @_;
+    my $m = scalar(@$topic);
+    my $i;
+    my $topic_vec = [];
+    
+    for ($i = 0; $i < $m; ++$i) {
+	$topic_vec->[$i] = 0.0;
+	foreach my $id (keys(%{$topic->[$i]})) {
+	    if (defined($user_vec->{$id})) {
+		$topic_vec->[$i] += $topic->[$i]->{$id};
+	    }
+	}
+    }
+    # scale
+    my $max_v = 0.0;
+    for (my $i = 0; $i < $m; ++$i) {
+	if ($max_v < $topic_vec->[$i]) {
+	    $max_v = $topic_vec->[$i];
+	}
+    }
+    if ($max_v > 0.0) {
+	my $factor = 1.0 / $max_v;
+	for (my $i = 0; $i < $m; ++$i) {
+	    $topic_vec->[$i] *= $factor;
+	}
+    }
+    return $topic_vec;
 }
 
 sub get_relational_repo
@@ -133,6 +223,9 @@ sub read_lang
 {
     my $repo = shift;
     my $lang = {};
+
+    print "read lang\r";
+    
     open(L, "download/lang.txt") or die $!;
 
     while (my $line = <L>) {
@@ -168,6 +261,8 @@ sub read_lang
 	@{$lang->{$id}} = uniq(@{$lang->{$id}});
     }
 
+    print "read lang\n";
+
     return $lang;
 }
 
@@ -195,6 +290,9 @@ sub match_lang
 sub read_test
 {
   my $uid = [];
+
+  print "read test\r";
+  
   open(T, "download/test.txt") or die $!;
   
   print "read test\r";
@@ -205,6 +303,9 @@ sub read_test
     push(@$uid, $user_id);
   }
   close(T);
+
+  print "read test \n";
+  
   return $uid;
 }
 
@@ -212,6 +313,8 @@ sub repo_rank
 {
     my ($repo, $user) = @_;
     my $max_count  = 0;
+
+    print "repo rank\r";
 
     foreach my $uid (keys(%{$user->{all_id}})) {
 	my $repo_vec = $user->{all_id}->{$uid};
@@ -235,28 +338,20 @@ sub repo_rank
     }
     @$rank = sort { $b->{score} <=> $a->{score} } @$rank;
     $repo->{rank} = $rank;
+
+    print "repo rank\n";
 }
 
 sub sim
 {
   my ($v1, $v2) = @_;
-  my ($n1, $n2) = (scalar(keys(%$v1)), scalar(keys(%$v2)));
-  my $ok11 = 0;
-  my $n = 0;
+  my $dist = 0.0;
+  my $n = scalar(@$v1);
   
-  foreach my $k (keys(%$v1)) {
-    if (defined($v2->{$k})) {
-      $ok11 += 1.0;
-    }
-    ++$n;
+  for (my $i = 0; $i < $n; ++$i) {
+      $dist += ($v1->[$i] - $v2->[$i]) * ($v1->[$i] - $v2->[$i]);
   }
-
-  if ($n == 0) {
-      return 0;
-  }
-
-  
-  return $ok11 / ($n1 > $n2 ? $n1:$n2);
+  return $dist;
 }
 
 sub print_vec
@@ -388,7 +483,7 @@ sub get_author_repo
 
 sub recommend_repo
 {
-  my ($user, $repo, $lang, $user_id, $n) = @_;
+  my ($user, $repo, $topic, $lang, $user_id, $n) = @_;
   my %score_vec;
   my @rec_vec;
   my @dist;
@@ -396,10 +491,11 @@ sub recommend_repo
   my ($i, $j, $nn);
   my $nfac = 1.0 / $n;
   my $vec = $user->{all_id}->{$user_id};
-
+  my $topic_vec = topic_vector($topic, $vec);
+  
   foreach my $uid (keys(%{$user->{id}})) {
-    my $user_vec = $user->{id}->{$uid};
-    push(@dist, { uid => $uid, dist => -sim($vec, $user_vec)})
+    my $other_topic_vec = $user->{topic}->{$uid};
+    push(@dist, { uid => $uid, dist => sim($topic_vec, $other_topic_vec)})
   }
   @dist = sort { $a->{dist} <=> $b->{dist} } @dist;
   #print "------------------\n";
@@ -425,7 +521,7 @@ sub recommend_repo
 	++$nn;
     }
   }
-  
+
   my @fork_base = get_fork_base($repo, $vec);
   foreach $i (@fork_base) {
       push(@result, $i);
@@ -445,7 +541,7 @@ sub recommend_repo
 	  }
       }
   }
-  
+
   if (@result < 10) {
       if ($nn == 0) {
 	  for ($j = 0; $j < scalar(@{$repo->{rank}}); ++$j) {
@@ -489,24 +585,25 @@ sub recommend_repo
 
 super_testttt:
 {
-  my $repo = read_repo();
-  my $lang = read_lang($repo);
-  my $user = read_user($repo, $lang);
-  my $test = read_test();
-  my $count = 0;
-
-  repo_rank($repo, $user);
-  
-  open(O, ">results.txt") or die $!;
-  select(O);$|=1;select(STDOUT);
-  
-  foreach my $uid (@$test) {
-      printf("recommend %.02f%%..\r", 100 * $count / scalar(@$test));
+    my $topic = read_topic();
+    my $repo = read_repo();
+    my $lang = read_lang($repo);
+    my $user = read_user($repo, $lang, $topic);
+    my $test = read_test();
+    my $count = 0;
     
-      my @result = recommend_repo($user, $repo, $lang, $uid, 150);
-      print O $uid, ":", join(",", @result), "\n";
-      #print $uid, ":", join(",", @result), "\n";
-      ++$count;
-  }
-  close(O);
+    repo_rank($repo, $user);
+    
+    open(O, ">results.txt") or die $!;
+    select(O);$|=1;select(STDOUT);
+    
+    foreach my $uid (@$test) {
+	printf("recommend %.02f%%..\n", 100 * $count / scalar(@$test));
+	
+	my @result = recommend_repo($user, $repo, $topic, $lang, $uid, 100);
+	print O $uid, ":", join(",", @result), "\n";
+	#print $uid, ":", join(",", @result), "\n";
+	++$count;
+    }
+    close(O);
 }
