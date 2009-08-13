@@ -347,11 +347,16 @@ sub _get_author_repo
 {
     my ($repo, $id, $author_repo) = @_;
     my $n = 0;
+    my @repo_tmp;
     
     foreach my $id (@{$repo->{author}->{$repo->{id}->{$id}->{author}}}) {
-	push(@$author_repo, { rate => $repo->{id}->{$id}->{rate}, id => $id });
+	push(@repo_tmp, { rate => $repo->{id}->{$id}->{rate}, id => $id });
+    }
+    @repo_tmp = sort { $b->{rate} <=> $a->{rate} } @repo_tmp;
 
-	if (++$n >= 2 ) {
+    foreach my $rec (@repo_tmp) {
+	push(@$author_repo, $rec);
+	if (++$n >= 2) {
 	    last;
 	}
     }
@@ -435,8 +440,7 @@ sub recommend_repo
 	  last;
       }
   }
-
-
+  
   if (@result < 10) {
       my @author_repo = get_author_repo($repo, $vec);
 #      printf("author_repo: %d, %s\n", scalar(@author_repo), join(",", @author_repo));
@@ -466,8 +470,7 @@ sub recommend_repo
 	  @rec_vec = sort { $b->{score} <=> $a->{score} } values(%score_vec);
 	  $i = 0;
 	  while (@result < 10) {
-	      if (!defined($vec->{$rec_vec[$i]->{i}})
-		  && match_lang($user->{lang}->{$user_id}, $lang->{$rec_vec[$i]->{i}})) {
+	      if (!defined($vec->{$rec_vec[$i]->{i}})) {
 		  #printf("%s:%f\n", $rec_vec[$i]->{i}, $rec_vec[$i]->{score});
 		  push(@result, $rec_vec[$i]->{i});
 		  if (@result >= 10) {
