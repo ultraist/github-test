@@ -356,7 +356,7 @@ sub _get_author_repo
 
     foreach my $rec (@repo_tmp) {
 	push(@$author_repo, $rec);
-	if (++$n >= 1) {
+	if (++$n >= 3) {
 	    last;
 	}
     }
