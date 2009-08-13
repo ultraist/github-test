@@ -115,8 +115,23 @@ sub read_user
 #  return { id => $user, all_id => $user, n => $count};
 }
 
+sub get_relational_repo
+{
+    my ($repo, $id) = @_;
+    my $vec = {$id => 0.0};
+    my @fork = get_fork($repo, $vec);
+    my @fork_base = get_fork_base($repo, $vec);
+    my @rel_repo;
+
+    push(@rel_repo, @fork);
+    push(@rel_repo, @fork_base);
+    
+    return uniq(@rel_repo);
+}
+
 sub read_lang
 {
+    my $repo = shift;
     my $lang = {};
     open(L, "download/lang.txt") or die $!;
 
@@ -134,6 +149,20 @@ sub read_lang
 	push(@{$lang->{$repo_id}}, @repo_lang);
     }
     close(L);
+
+    for (my $i = 0; $i < 3; ++$i) {
+	foreach my $id (keys(%{$repo->{id}})) {
+	    my @rel_repo = get_relational_repo($repo, $id);
+	    my @repo_lang;
+	    
+	    foreach my $rid (@rel_repo) {
+		if (defined($lang->{$rid})) {
+		    push(@repo_lang, @{$lang->{$rid}});
+		}
+	    }
+	    push(@{$lang->{$id}}, @repo_lang);
+	}
+    }
 
     foreach my $id (keys(%$lang)) {
 	@{$lang->{$id}} = uniq(@{$lang->{$id}});
@@ -437,8 +466,7 @@ sub recommend_repo
 	  @rec_vec = sort { $b->{score} <=> $a->{score} } values(%score_vec);
 	  $i = 0;
 	  while (@result < 10) {
-	      if (!defined($vec->{$rec_vec[$i]->{i}})
-		  && match_lang($user->{lang}->{$user_id}, $lang->{$rec_vec[$i]->{i}})) {
+	      if (!defined($vec->{$rec_vec[$i]->{i}})) {
 		  #printf("%s:%f\n", $rec_vec[$i]->{i}, $rec_vec[$i]->{score});
 		  push(@result, $rec_vec[$i]->{i});
 		  if (@result >= 10) {
@@ -467,7 +495,7 @@ sub recommend_repo
 super_testttt:
 {
   my $repo = read_repo();
-  my $lang = read_lang();
+  my $lang = read_lang($repo);
   my $user = read_user($repo, $lang);
   my $test = read_test();
   my $count = 0;
