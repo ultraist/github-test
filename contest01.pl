@@ -165,7 +165,7 @@ sub sim
   }
 
   
-  return $ok11 / $n;
+  return $ok11 / ($n1 > $n2 ? $n1:$n2);
 }
 
 sub print_vec
