@@ -205,6 +205,22 @@ sub topic_vector
     return $topic_vec;
 }
 
+sub topic_max_idx
+{
+    my $topic_vector = shift;
+    my $i = 0;
+    my $max_i = 0;
+    my $max_v = 0;
+    my $n = scalar(@$topic_vector);
+    for ($i = 0; $i < $n; ++$i) {
+	if ($max_v < $topic_vector->[$i]) {
+	    $max_v = $topic_vector->[$i];
+	    $max_i = $i;
+	}
+    }
+    return $max_i;
+}
+
 sub get_relational_repo
 {
     my ($repo, $id) = @_;
@@ -493,35 +509,6 @@ sub recommend_repo
   my $vec = $user->{all_id}->{$user_id};
   my $topic_vec = topic_vector($topic, $vec);
   
-  foreach my $uid (keys(%{$user->{id}})) {
-    my $other_topic_vec = $user->{topic}->{$uid};
-    push(@dist, { uid => $uid, dist => sim($topic_vec, $other_topic_vec)})
-  }
-  @dist = sort { $a->{dist} <=> $b->{dist} } @dist;
-  #print "------------------\n";
-  #print_vec($vec, $repo);
-
-  $nn = 0;
-  for ($j = 0; $j < $n; ++$j) {
-    my $repo_vec = $user->{id}->{$dist[$j]->{uid}};
-    my $weight = (1.0 - $j / $n) ** 2;
-    if ($dist[$j]->{dist} != 0.0) {
-	#if ($j < 5) {
-	#  print "$j($dist[$j]->{dist}):";
-	#  print_vec($repo_vec, $repo);
-	#}
-	foreach $i (keys(%$repo_vec)) {
-	    if (!defined($score_vec{$i})) {
-		$score_vec{$i} = { i => $i, score => 0.0 };
-		$score_vec{$i}->{score} = $weight + $nfac * $repo->{id}->{$i}->{rate};
-	    } else {
-		$score_vec{$i}->{score} += $weight + $nfac * $repo->{id}->{$i}->{rate};
-	    }
-	}
-	++$nn;
-    }
-  }
-
   my @fork_base = get_fork_base($repo, $vec);
   foreach $i (@fork_base) {
       push(@result, $i);
@@ -541,45 +528,25 @@ sub recommend_repo
 	  }
       }
   }
-
+  
   if (@result < 10) {
-      if ($nn == 0) {
-	  for ($j = 0; $j < scalar(@{$repo->{rank}}); ++$j) {
-	      if (!defined($vec->{$repo->{rank}->[$j]->{id}})
-		  && match_lang($user->{lang}->{$user_id}, $lang->{$repo->{rank}->[$j]->{id}}))
-	      {
-		  push(@result, $repo->{rank}->[$j]->{id});
-		  if (@result >= 10) {
-		      last;
-		  }
-	      }
-	  }
-      } else {
-	  @rec_vec = sort { $b->{score} <=> $a->{score} } values(%score_vec);
-	  $i = 0;
-	  while (@result < 10) {
-	      if (!defined($vec->{$rec_vec[$i]->{i}})) {
-		  push(@result, $rec_vec[$i]->{i});
-		  if (@result >= 10) {
-		      last;
-		  }
-	      }
-	      ++$i;
-	      if (!defined($rec_vec[$i]->{i})) {
-		  for ($j = 0; $j < scalar(@{$repo->{rank}}); ++$j) {
-		      if (!defined($vec->{$repo->{rank}->[$j]->{id}})
-			  && match_lang($user->{lang}->{$user_id}, $lang->{$repo->{rank}->[$j]->{id}}))
-		      {
-			  push(@result, $repo->{rank}->[$j]->{id});
-			  if (@result >= 10) {
-			      last;
-			  }
-		      }
-		  }
+      my @topic_word;
+      my $max_i = topic_max_idx($topic_vec);
+      foreach my $word (keys(%{$topic->[$max_i]})) {
+	  push(@topic_word, { likely => $topic->[$max_i]->{$word}, word => $word });
+      }
+      @topic_word = sort { $b->{likely} <=> $a->{likely} } @topic_word;
+      foreach $i (@topic_word) {
+	  if (!defined($vec->{$i->{word}})) {
+	      push(@result, $i->{word});
+	  
+	      if (@result >= 10) {
+		  last;
 	      }
 	  }
       }
   }
+
   return @result;
 }
 
@@ -598,7 +565,7 @@ super_testttt:
     select(O);$|=1;select(STDOUT);
     
     foreach my $uid (@$test) {
-	printf("recommend %.02f%%..\n", 100 * $count / scalar(@$test));
+	printf("recommend %.02f%%..\r", 100 * $count / scalar(@$test));
 	
 	my @result = recommend_repo($user, $repo, $topic, $lang, $uid, 100);
 	print O $uid, ":", join(",", @result), "\n";
