@@ -356,7 +356,7 @@ sub _get_author_repo
 
     foreach my $rec (@repo_tmp) {
 	push(@$author_repo, $rec);
-	if (++$n >= 3) {
+	if (++$n >= 2) {
 	    last;
 	}
     }
@@ -408,7 +408,7 @@ sub recommend_repo
   $nn = 0;
   for ($j = 0; $j < $n; ++$j) {
     my $repo_vec = $user->{id}->{$dist[$j]->{uid}};
-    my $weight = 1.0 - $j / $n;
+    my $weight = (1.0 - $j / $n) ** 2;
     if ($dist[$j]->{dist} != 0.0) {
 	#if ($j < 5) {
 	#  print "$j($dist[$j]->{dist}):";
@@ -427,12 +427,6 @@ sub recommend_repo
   }
   
   my @fork_base = get_fork_base($repo, $vec);
-  #if (@fork_base) {
-  #    printf("fork base: %d, %s\n", scalar(@fork_base), join(",", @fork_base));
-  #} else {
-  #    printf("fork base: 0\n");
-  #}
-
   foreach $i (@fork_base) {
       push(@result, $i);
       
@@ -443,8 +437,6 @@ sub recommend_repo
   
   if (@result < 10) {
       my @author_repo = get_author_repo($repo, $vec);
-#      printf("author_repo: %d, %s\n", scalar(@author_repo), join(",", @author_repo));
-      
       foreach $i (@author_repo) {
 	  push(@result, $i);
 	  
@@ -471,7 +463,6 @@ sub recommend_repo
 	  $i = 0;
 	  while (@result < 10) {
 	      if (!defined($vec->{$rec_vec[$i]->{i}})) {
-		  #printf("%s:%f\n", $rec_vec[$i]->{i}, $rec_vec[$i]->{score});
 		  push(@result, $rec_vec[$i]->{i});
 		  if (@result >= 10) {
 		      last;
