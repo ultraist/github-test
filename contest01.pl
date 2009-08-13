@@ -503,7 +503,7 @@ super_testttt:
   foreach my $uid (@$test) {
       printf("recommend %.02f%%..\r", 100 * $count / scalar(@$test));
     
-      my @result = recommend_repo($user, $repo, $lang, $uid, 50);
+      my @result = recommend_repo($user, $repo, $lang, $uid, 200);
       print O $uid, ":", join(",", @result), "\n";
       #print $uid, ":", join(",", @result), "\n";
       ++$count;
