@@ -53,7 +53,7 @@ sub read_repo
 
 sub read_user
 {
-  my $repo = shift;
+  my ($repo, $lang) = @_;
   my $user = {};
   my $i = 0;
   
@@ -96,9 +96,71 @@ sub read_user
   }
   $samples =  scalar(keys(%$sample_user));
   printf("read user , count: %d, var:%f, sd:%f, samples:%d\n", $count, $var, $sd, $samples);
+
+
+  # lang
+  my $user_lang = {};
+  foreach my $uid (keys(%$user)) {
+      my @skill_lang;
+      foreach my $rid (keys(%{$user->{$uid}})) {
+	  if (defined($lang->{$rid})) {
+	      push(@skill_lang, @{$lang->{$rid}});
+	  }
+      }
+      $user_lang->{$uid} = [];
+      push(@{$user_lang->{$uid}}, uniq(@skill_lang));
+  }
   
-  return { id => $sample_user, all_id => $user, n => $samples};
+  return { id => $sample_user, all_id => $user, lang => $user_lang, n => $samples};
 #  return { id => $user, all_id => $user, n => $count};
+}
+
+sub read_lang
+{
+    my $lang = {};
+    open(L, "download/lang.txt") or die $!;
+
+    while (my $line = <L>) {
+	my @repo_lang;
+	chomp($line);
+	my($repo_id, $lang_info) = split(":", $line);
+	my @lang_line = split(",", $lang_info);
+	for (my $i = 0; $i < @lang_line; $i++) {
+	    push(@repo_lang, (split(";", $lang_line[$i]))[0]);
+	}
+	if (!defined($lang->{$repo_id})) {
+	    $lang->{$repo_id} = [];
+	}
+	push(@{$lang->{$repo_id}}, @repo_lang);
+    }
+    close(L);
+
+    foreach my $id (keys(%$lang)) {
+	@{$lang->{$id}} = uniq(@{$lang->{$id}});
+    }
+
+    return $lang;
+}
+
+sub match_lang
+{
+    my ($user_lang, $repo_lang) = @_;
+
+    if (!$user_lang || !@$user_lang) {
+	return 1;
+    }
+    if (!$repo_lang || !@$repo_lang) {
+	return 1;
+    }
+
+    foreach my $i (@$repo_lang) {
+	foreach my $j (@$user_lang) {
+	    if ($i eq $j) {
+		return 1;
+	    }
+	}
+    }
+    return undef;
 }
 
 sub read_test
@@ -292,14 +354,15 @@ sub get_author_repo
 
 sub recommend_repo
 {
-  my ($user, $repo, $vec, $n) = @_;
+  my ($user, $repo, $lang, $user_id, $n) = @_;
   my %score_vec;
   my @rec_vec;
   my @dist;
   my @result;
-  my ($i, $j, $c, $matchs);
+  my ($i, $j, $nn);
   my $nfac = 1.0 / $n;
-  
+  my $vec = $user->{all_id}->{$user_id};
+
   foreach my $uid (keys(%{$user->{id}})) {
     my $user_vec = $user->{id}->{$uid};
     push(@dist, { uid => $uid, dist => -sim($vec, $user_vec)})
@@ -308,7 +371,7 @@ sub recommend_repo
   #print "------------------\n";
   #print_vec($vec, $repo);
 
-  $matchs = 0;
+  $nn = 0;
   for ($j = 0; $j < $n; ++$j) {
     my $repo_vec = $user->{id}->{$dist[$j]->{uid}};
     my $weight = 1.0 - $j / $n;
@@ -325,11 +388,10 @@ sub recommend_repo
 		$score_vec{$i}->{score} += $weight + $nfac * $repo->{id}->{$i}->{rate};
 	    }
 	}
-	++$matchs;
+	++$nn;
     }
   }
   
-  $c = 0;
   my @fork_base = get_fork_base($repo, $vec);
   #if (@fork_base) {
   #    printf("fork base: %d, %s\n", scalar(@fork_base), join(",", @fork_base));
@@ -340,54 +402,59 @@ sub recommend_repo
   foreach $i (@fork_base) {
       push(@result, $i);
       
-      if (++$c >= 10) {
+      if (@result >= 10) {
 	  last;
       }
   }
 
 
-  if ($c < 10) {
+  if (@result < 10) {
       my @author_repo = get_author_repo($repo, $vec);
 #      printf("author_repo: %d, %s\n", scalar(@author_repo), join(",", @author_repo));
       
       foreach $i (@author_repo) {
 	  push(@result, $i);
 	  
-	  if (++$c >= 10) {
+	  if (@result >= 10) {
 	      last;
 	  }
       }
   }
   
-  if ($c < 10) {
-      if ($matchs == 0) {
+  if (@result < 10) {
+      if ($nn == 0) {
 	  for ($j = 0; $j < scalar(@{$repo->{rank}}); ++$j) {
-	      if (!defined($vec->{$repo->{rank}->[$j]->{id}})) {
+	      if (!defined($vec->{$repo->{rank}->[$j]->{id}})
+		  && match_lang($user->{lang}->{$user_id}, $lang->{$repo->{rank}->[$j]->{id}}))
+	      {
 		  push(@result, $repo->{rank}->[$j]->{id});
-		  ++$c;
-	      }
-	      if ($c >= 10) {
-		  last;
+		  if (@result >= 10) {
+		      last;
+		  }
 	      }
 	  }
       } else {
 	  @rec_vec = sort { $b->{score} <=> $a->{score} } values(%score_vec);
 	  $i = 0;
-	  while ($c < 10) {
-	      if (!defined($vec->{$rec_vec[$i]->{i}})) {
+	  while (@result < 10) {
+	      if (!defined($vec->{$rec_vec[$i]->{i}})
+		  && match_lang($user->{lang}->{$user_id}, $lang->{$rec_vec[$i]->{i}})) {
 		  #printf("%s:%f\n", $rec_vec[$i]->{i}, $rec_vec[$i]->{score});
 		  push(@result, $rec_vec[$i]->{i});
-		  ++$c;
+		  if (@result >= 10) {
+		      last;
+		  }
 	      }
 	      ++$i;
 	      if (!defined($rec_vec[$i]->{i})) {
 		  for ($j = 0; $j < scalar(@{$repo->{rank}}); ++$j) {
-		      if (!defined($vec->{$repo->{rank}->[$j]->{id}})) {
+		      if (!defined($vec->{$repo->{rank}->[$j]->{id}})
+			  && match_lang($user->{lang}->{$user_id}, $lang->{$repo->{rank}->[$j]->{id}}))
+		      {
 			  push(@result, $repo->{rank}->[$j]->{id});
-			  ++$c;
-		      }
-		      if ($c >= 10) {
-			  last;
+			  if (@result >= 10) {
+			      last;
+			  }
 		      }
 		  }
 	      }
@@ -400,7 +467,8 @@ sub recommend_repo
 super_testttt:
 {
   my $repo = read_repo();
-  my $user = read_user($repo);
+  my $lang = read_lang();
+  my $user = read_user($repo, $lang);
   my $test = read_test();
   my $count = 0;
 
@@ -410,13 +478,12 @@ super_testttt:
   select(O);$|=1;select(STDOUT);
   
   foreach my $uid (@$test) {
-    printf("recommend %.02f%%..\r", 100 * $count / scalar(@$test));
+      printf("recommend %.02f%%..\r", 100 * $count / scalar(@$test));
     
-    my $test_vec = $user->{all_id}->{$uid};
-    my @result = recommend_repo($user, $repo, $test_vec, 100);
-    print O $uid, ":", join(",", @result), "\n";
-    #print $uid, ":", join(",", @result), "\n";
-    ++$count;
+      my @result = recommend_repo($user, $repo, $lang, $uid, 100);
+      print O $uid, ":", join(",", @result), "\n";
+      #print $uid, ":", join(",", @result), "\n";
+      ++$count;
   }
   close(O);
 }
