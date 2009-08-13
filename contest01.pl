@@ -179,7 +179,7 @@ sub match_lang
 	return 1;
     }
     if (!$repo_lang || !@$repo_lang) {
-	return 1;
+	return undef;
     }
 
     foreach my $i (@$repo_lang) {
